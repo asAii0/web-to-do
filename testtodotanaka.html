@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>共有ToDo</title>
+
+<style>
+    
+body{
+
+    font-family:'M PLUS Rounded 1c',sans-serif;
+    max-width:1000px;
+    margin:30px auto;
+    padding:20px;
+
+    background:linear-gradient(
+        180deg,
+        #dff4ff 0%,
+        #eef9ff 100%
+    );
+
+}
+
+h1{
+    text-align:center;
+}
+
+.input-row{
+    display:flex;
+    gap:10px;
+    margin-bottom:12px;
+}
+
+input,select,button{
+    padding:10px;
+}
+
+input{
+    flex:1;
+}
+
+#tree{
+    margin-top:20px;
+}
+
+.folder{
+    margin:4px 0;
+    font-weight:bold;
+    cursor:pointer;
+}
+
+.task{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin:4px 0;
+}
+
+.done{
+    text-decoration:line-through;
+    opacity:.45;
+}
+
+.deleteBtn{
+    margin-left:10px;
+    cursor:pointer;
+}
+
+.deleteBtn:hover{
+    background:red;
+    color:white;
+}
+
+.folderLine{
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
+
+small{
+    color:#666;
+}
+
+.folderDelete{
+    margin-left:10px;
+    cursor:pointer;
+}
+
+.folderDelete:hover{
+    background:red;
+    color:white;
+}
+.task{
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
+
+.taskText{
+    flex:1;
+}
+
+.folderActions{
+    display:flex;
+    gap:6px;
+    margin-left:auto;
+}
+
+.folderToggle{
+    flex:1;
+}
+
+#app{
+    max-width:1000px;
+    margin:auto;
+
+    background:linear-gradient(
+    180deg,
+    #dff4ff 0%,
+    #eef9ff 100%
+);
+
+    backdrop-filter:blur(8px);
+
+    border-radius:24px;
+    padding:24px;
+
+    box-shadow:0 8px 30px rgba(0,0,0,.08);
+}
+
+
+</style>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+
+
+    <div id="app">
+
+<h1>共有ToDo</h1>
+
+<label>
+<input type="checkbox" id="showCompleted">
+完了したタスクを表示
+</label>
+
+<hr>
+
+<div class="input-row">
+    <input id="taskInput" placeholder="タスク名">
+    <select id="folderSelect"></select>
+    <button id="addTaskBtn">タスク追加</button>
+</div>
+
+<div class="input-row">
+    <input id="folderInput" placeholder="フォルダ名">
+    <select id="parentFolder"></select>
+    <button id="addFolderBtn">フォルダ追加</button>
+</div>
+
+<div id="tree"></div>
+
+<script type="module">
+
+import { initializeApp }
+from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
+
+import {
+    getDatabase,
+    ref,
+    push,
+    onValue,
+    update,
+    remove,
+    get
+}
+from "https://www.gstatic.com/firebasejs/12.0.0/firebase-database.js";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyBf4K2LqOuvpe4pi_Q5o3vuhoXj35bgkEs",
+    authDomain: "test-to-do-m.firebaseapp.com",
+    databaseURL: "https://test-to-do-m-default-rtdb.firebaseio.com",
+    projectId: "test-to-do-m",
+    storageBucket: "test-to-do-m.firebasestorage.app",
+    messagingSenderId: "874724779977",
+    appId: "1:874724779977:web:f8fe82b96fb0619063ea18"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+const tree = document.getElementById("tree");
+
+const taskInput = document.getElementById("taskInput");
+const folderInput = document.getElementById("folderInput");
+
+const folderSelect =
+document.getElementById("folderSelect");
+
+const parentFolder =
+document.getElementById("parentFolder");
+
+const addTaskBtn =
+document.getElementById("addTaskBtn");
+
+const addFolderBtn =
+document.getElementById("addFolderBtn");
+
+const showCompleted =
+document.getElementById("showCompleted");
+
+const collapsed = {};
+
+let foldersData = {};
+let tasksData = {};
+
+const recentlyCompleted =
+new Set();
+
+let showCompletedTasks = false;
+
+showCompleted.addEventListener(
+"change",
+()=>{
+    showCompletedTasks =
+    showCompleted.checked;
+
+    render();
+}
+);
+
+addFolderBtn.addEventListener(
+"click",
+()=>{
+
+    const name =
+    folderInput.value.trim();
+
+    if(!name) return;
+
+    let parent =
+    parentFolder.value || "root";
+
+    let depth = 0;
+
+    let current = parent;
+
+    while(
+        current &&
+        current !== "root"
+    ){
+        depth++;
+
+        current =
+        foldersData[current]?.parent;
+    }
+
+    if(depth >= 3){
+        alert("フォルダは3階層までです");
+        return;
+    }
+
+    push(
+        ref(db,"folders"),
+        {
+            name,
+            parent
+        }
+    );
+
+    folderInput.value = "";
+}
+);
+
+addTaskBtn.addEventListener(
+"click",
+()=>{
+
+    const text =
+    taskInput.value.trim();
+
+    if(!text) return;
+
+    push(
+        ref(db,"tasks"),
+        {
+            text,
+            done:false,
+            folder:
+            folderSelect.value
+            || "root"
+        }
+    );
+
+    taskInput.value = "";
+}
+);
+
+onValue(
+ref(db),
+(snapshot)=>{
+
+    const data =
+    snapshot.val() || {};
+
+    foldersData =
+    data.folders || {};
+
+    tasksData =
+    data.tasks || {};
+
+    updateSelects();
+
+    render();
+
+}
+);
+
+function updateSelects(){
+
+    folderSelect.innerHTML =
+    `<option value="">ルート</option>`;
+
+    parentFolder.innerHTML =
+    `<option value="">ルート</option>`;
+
+    function walk(
+        parent,
+        level
+    ){
+
+        Object.entries(foldersData)
+        .filter(
+            ([id,f]) =>
+            f.parent === parent
+        )
+        .forEach(
+            ([id,f])=>{
+
+            const prefix =
+            "　".repeat(level);
+
+            const html =
+            `<option value="${id}">
+            ${prefix}${f.name}
+            </option>`;
+
+            folderSelect
+            .insertAdjacentHTML(
+                "beforeend",
+                html
+            );
+
+            parentFolder
+            .insertAdjacentHTML(
+                "beforeend",
+                html
+            );
+
+            walk(id, level+1);
+
+        });
+    }
+
+    walk("root",0);
+}
+
+function shouldShowTask(
+task,
+taskId
+){
+
+    if(showCompletedTasks)
+        return true;
+
+    if(
+        task.done &&
+        !recentlyCompleted.has(taskId)
+    ){
+        return false;
+    }
+
+    return true;
+}
+
+function render(){
+
+    tree.innerHTML="";
+
+    renderFolder(
+        "root",
+        0
+    );
+
+}
+
+function renderFolder(
+parentId,
+depth
+){
+
+    Object.entries(foldersData)
+.filter(
+    ([id,f]) =>
+    f.parent === parentId
+)
+.sort((a,b)=>{
+
+    const pinA =
+        a[1].pinned ? 1 : 0;
+
+    const pinB =
+        b[1].pinned ? 1 : 0;
+
+    return pinB - pinA;
+
+})
+.forEach(
+([id,folder])=>{
+
+    const open =
+        !collapsed[id];
+
+    const folderDiv =
+        document.createElement("div");
+
+    folderDiv.className =
+        "folder";
+
+    folderDiv.style.marginLeft =
+        (depth*25)+"px";
+
+    const taskCount =
+        Object.values(tasksData)
+        .filter(
+            t => t.folder === id
+        ).length;
+
+    folderDiv.innerHTML = `
+    <div class="folderLine">
+
+        <span class="folderToggle">
+            ${open ? '▼' : '▶'}
+            📁 ${folder.name}
+        </span>
+
+        <small>(${taskCount})</small>
+
+        <div class="folderActions">
+
+            <button class="folderPin">
+                ${folder.pinned ? '📌' : '📍'}
+            </button>
+
+            <button class="folderRename">
+                ✏️
+            </button>
+
+            <button class="folderDelete">
+                🗑
+            </button>
+
+        </div>
+
+    </div>
+    `;
+
+    // 折りたたみ
+    folderDiv
+    .querySelector(".folderToggle")
+    .addEventListener(
+        "click",
+        () => {
+
+            collapsed[id] =
+                !collapsed[id];
+
+            render();
+
+        }
+    );
+
+    // 名前変更
+    folderDiv
+    .querySelector(".folderRename")
+    .addEventListener(
+        "click",
+        (e)=>{
+
+            e.stopPropagation();
+
+            const newName =
+                prompt(
+                    "新しいフォルダ名",
+                    folder.name
+                );
+
+            if(!newName) return;
+
+            update(
+                ref(
+                    db,
+                    "folders/" + id
+                ),
+                {
+                    name:newName.trim()
+                }
+            );
+        }
+    );
+
+    // ピン固定
+    folderDiv
+    .querySelector(".folderPin")
+    .addEventListener(
+        "click",
+        (e)=>{
+
+            e.stopPropagation();
+
+            update(
+                ref(
+                    db,
+                    "folders/" + id
+                ),
+                {
+                    pinned:
+                        !folder.pinned
+                }
+            );
+
+        }
+    );
+
+    // 削除
+    folderDiv
+    .querySelector(".folderDelete")
+    .addEventListener(
+        "click",
+        (e)=>{
+
+            e.stopPropagation();
+
+            deleteFolder(id);
+
+        }
+    );
+
+    tree.appendChild(
+        folderDiv
+    );
+
+    if(!open) return;
+
+    renderTasks(
+        id,
+        depth + 1
+    );
+
+    renderFolder(
+        id,
+        depth + 1
+    );
+
+});
+if(parentId === "root"){
+
+    renderTasks(
+        "root",
+        0
+    );
+
+}
+
+}
+
+function renderTasks(
+folderId,
+depth
+){
+
+    Object.entries(tasksData)
+    .filter(
+        ([id,t]) =>
+        t.folder===folderId
+    )
+    .filter(
+        ([id,t]) =>
+        shouldShowTask(
+            t,
+            id
+        )
+    )
+    .forEach(
+        ([id,task])=>{
+
+        const div =
+        document.createElement(
+            "div"
+        );
+
+        div.className =
+        "task";
+
+        div.style.marginLeft =
+        (depth*25)+"px";
+
+        div.innerHTML =
+       
+            `
+            <span class="
+            ${task.done ? "done" : ""}
+            taskText
+            ">
+            ${task.text}
+            </span>
+
+            <input
+            type="checkbox"
+            ${task.done ? "checked" : ""}
+            >
+
+            <button class="deleteBtn">
+            🗑
+            </button>
+            `;
+
+        const checkbox =
+        div.querySelector(
+            "input"
+        );
+
+        checkbox.addEventListener(
+        "change",
+        (e)=>{
+
+            if(
+            e.target.checked
+            ){
+                recentlyCompleted
+                .add(id);
+            }else{
+                recentlyCompleted
+                .delete(id);
+            }
+
+            update(
+                ref(
+                    db,
+                    "tasks/"+id
+                ),
+                {
+                    done:
+                    e.target.checked
+                }
+            );
+
+        });
+
+        div
+        .querySelector(
+            ".deleteBtn"
+        )
+        .addEventListener(
+        "click",
+        ()=>{
+
+            remove(
+                ref(
+                    db,
+                    "tasks/"+id
+                )
+            );
+
+        });
+
+        tree.appendChild(
+            div
+        );
+
+    });
+}
+
+async function deleteFolder(folderId){
+
+    if(
+        !confirm(
+            "このフォルダと中身を削除しますか？"
+        )
+    ){
+        return;
+    }
+
+    const data =
+        (await get(ref(db)))
+        .val() || {};
+
+    const folders =
+        data.folders || {};
+
+    const tasks =
+        data.tasks || {};
+
+    const targets =
+        new Set();
+
+    collect(folderId);
+
+    function collect(id){
+
+        targets.add(id);
+
+        Object.entries(folders)
+        .forEach(([fid,f])=>{
+
+            if(f.parent === id){
+                collect(fid);
+            }
+
+        });
+
+    }
+
+    Object.entries(tasks)
+    .forEach(([tid,t])=>{
+
+        if(
+            targets.has(
+                t.folder
+            )
+        ){
+            remove(
+                ref(
+                    db,
+                    "tasks/"+tid
+                )
+            );
+        }
+
+    });
+
+    targets.forEach(id=>{
+
+        remove(
+            ref(
+                db,
+                "folders/"+id
+            )
+        );
+
+    });
+
+}
+
+</script>
+</div>
+
+
+</body>
+</html>
