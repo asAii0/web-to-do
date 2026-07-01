@@ -436,11 +436,15 @@ depth
     folderDiv.style.marginLeft =
         (depth*25)+"px";
 
-    const taskCount =
-        Object.values(tasksData)
-        .filter(
-            t => t.folder === id
-        ).length;
+   
+const taskCount =
+Object.values(tasksData)
+.filter(
+    t =>
+        t.folder === id &&
+        !t.done
+).length;
+
 
     folderDiv.innerHTML = `
     <div class="folderLine">
@@ -450,7 +454,12 @@ depth
             📁 ${folder.name}
         </span>
 
-        <small>(${taskCount})</small>
+        <small>
+${taskCount === 0
+    ? "(完了)"
+    : `(未完了 ${taskCount})`
+}
+</small>
 
         <div class="folderActions">
 
